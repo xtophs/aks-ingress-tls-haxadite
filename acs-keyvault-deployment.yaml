@@ -1,0 +1,67 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: test-keyvault
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: keyvault-self
+    spec:
+      containers:
+      - image: neilpeterson/aks-helloworld:v1
+        name: test-selfssl
+        ports:
+        - containerPort: 80       
+      
+        env:
+        - name: TITLE
+          value: Title       
+
+      initContainers:
+      - name: keyvault-agent
+        image: oneweekacr.azurecr.io/oneweek-kv-init:latest
+        env:
+        - name: VAULT_BASE_URL
+          value: https://oneweek-kv.vault.azure.net/
+        - name: SERVICE_PRINCIPLE_FILE_PATH
+          value: /host/azure.json
+        - name: SECRETS_FOLDER
+          value: /secrets
+        - name: SECRETS_KEYS
+          value: mt-ssl-cert::mt-ssl-cert.pem:mt-ssl-key.pem
+        - name: CREATE_KUBERNETES_SECRETS
+          value: "true"
+ 
+        volumeMounts:
+        - name: secrets
+          mountPath: /secrets
+
+        - name: host-sp
+          mountPath: /host/azure.json
+          readOnly: true
+      imagePullSecrets:
+      - name: regcred
+      volumes:
+      - name: secrets
+        emptyDir:
+          # we want the secrets to reside only in-memory
+          medium: Memory
+
+      - name: host-sp
+        hostPath:
+          # this file contains the cluster service-principal, it exists on every node by default
+          path: /etc/kubernetes/azure.json
+          type: File
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selfssl-svc
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+  selector:
+    app: keyvault-self
